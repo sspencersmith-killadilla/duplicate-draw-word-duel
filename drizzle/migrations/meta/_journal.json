@@ -15,6 +15,13 @@
       "when": 1794320950243,
       "tag": "0001_bot_deals",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1794323410879,
+      "tag": "0002_ai_explanation_access_state",
+      "breakpoints": true
     }
   ]
 }

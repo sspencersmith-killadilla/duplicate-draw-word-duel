@@ -38,3 +38,4 @@ use the editor.
 - Bot deals reuse `daily_deals` (kind='bot', bot_number) and `games.vs_bot`; the human is always North and the bot (South, deterministic best-score move from `engine.bestMove`) moves inside the same server call, so bot games need no scheduler and every North player faces the same strategy.
 - Guest play uses anonymous auth sessions; guests upgrade in place (updateUser email+password) so their user id, games and results carry over.
 - Placement previews use an authenticated read-only server function and the same engine/dictionary as submission; previews never commit a move or reveal future tiles.
+- Optional AI explanations revalidate placements through the shared read-only preview, send only the rejection reason to server-only AI Gateway helpers, and never affect move eligibility or scores; provider access denials persist in a service-only table.

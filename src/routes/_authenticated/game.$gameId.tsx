@@ -9,6 +9,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getGame, passTurn, playMove, previewPlay, swapTiles } from "@/lib/game/game.functions";
 import type { MoveError, MoveResult } from "@/lib/game/engine";
 import { BoardGrid, Tile } from "@/components/game/Board";
+import { PlacementExplanation } from "@/components/game/PlacementExplanation";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -273,6 +274,9 @@ function GamePage() {
           {myTurn && !swapMode && <p role="status" aria-live="polite" className={cn("min-h-8 w-full text-center text-sm", result && !result.ok ? "text-destructive" : "text-muted-foreground")}>
             {pending.size > 0 ? result ? result.ok ? `${result.words.join(", ")} · ${result.score} points · Playable` : result.error : "Checking word…" : ""}
           </p>}
+          {myTurn && !swapMode && pending.size > 0 && result && !result.ok && (
+            <PlacementExplanation key={previewKey} gameId={gameId} placements={placements} reason={result.error} />
+          )}
         </div>
       </div>
 
