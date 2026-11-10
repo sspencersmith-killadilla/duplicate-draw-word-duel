@@ -28,3 +28,10 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+## Project rules
+- Game rules live in pure `src/lib/game/engine.ts` (tested in `engine.test.ts`); server functions in `game.functions.ts` are the only writers of game state, so moves can't be faked from the browser.
+- Upcoming tiles and racks are kept in service-only tables (`deal_secrets`, `game_secrets`) so players never see future draws.
+- Each seat (North/South) draws from its own half of the deal's shuffled bag, so every table's seat gets identical tiles regardless of the opponent's play.
+- Deal expiry and 48h turn timeouts are applied lazily when games are read (no scheduled job) to avoid recurring backend cost.
+- Read server functions use POST so refetches after a move are never served stale.
