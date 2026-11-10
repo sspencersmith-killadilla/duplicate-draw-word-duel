@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 export function Logo() {
   return (
     <Link to="/" className="flex items-center gap-2">
-      <span className="tile flex h-8 w-8 items-center justify-center text-lg">D</span>
-      <span className="font-display text-xl font-semibold tracking-tight">Duplicate Draw</span>
+      <span className="tile flex h-8 w-8 shrink-0 items-center justify-center text-lg">D</span>
+      <span className="hidden font-display text-xl font-semibold tracking-tight sm:inline">Duplicate Draw</span>
     </Link>
   );
 }
@@ -29,17 +29,17 @@ export function SiteHeader() {
   const active = { className: "text-sm text-foreground font-semibold" };
   return (
     <header className="border-b border-border/60">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2.5 sm:py-3">
         <Logo />
         {ready && (
-          <nav className="flex items-center gap-4">
+          <nav className="flex min-w-0 items-center gap-3 sm:gap-4">
             {session ? (
               <>
                 <Link to="/lobby" className={link} activeProps={active}>Lobby</Link>
                 <Link to="/leaderboard" className={link} activeProps={active}>Rankings</Link>
                 <Link to="/profile" className={link} activeProps={active}>Profile</Link>
                 {isGuest ? (
-                  <Button variant="brass" size="sm" asChild><Link to="/auth">Save account</Link></Button>
+                  <Button variant="brass" size="sm" asChild><Link to="/auth">Save<span className="hidden sm:inline">&nbsp;account</span></Link></Button>
                 ) : (
                   <Button variant="felt" size="sm" onClick={signOut}>Sign out</Button>
                 )}

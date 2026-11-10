@@ -2,7 +2,7 @@ import { SaveGuestBanner } from "@/components/SaveGuestBanner";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Shuffle, Undo2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -70,7 +70,7 @@ function GamePage() {
   const pendingLetters = useMemo(() => new Map([...pending].map(([k, t]) => [k, t.letter])), [pending]);
 
   function onCellClick(r: number, c: number) {
-    if (!myTurn || swapMode) return;
+    if (suppressClick.current || !myTurn || swapMode) return;
     const key = `${r},${c}`;
     if (pending.has(key)) {
       const next = new Map(pending); next.delete(key); setPending(next); return;
@@ -83,7 +83,72 @@ function GamePage() {
     setSelected(null);
   }
 
+  // ---- Drag and drop (pointer events: works for mouse and touch) ----
+  type Drag = { tile: RackTile; fromKey: string | null; x: number; y: number; sx: number; sy: number; moving: boolean };
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const dragRef = useRef<Drag | null>(null);
+  const suppressClick = useRef(false);
+
+  function startDrag(tile: RackTile, fromKey: string | null, e: React.PointerEvent) {
+    if (!myTurn || swapMode || e.button > 0) return;
+    const d = { tile, fromKey, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moving: false };
+    dragRef.current = d; setDrag(d);
+  }
+
+  useEffect(() => {
+    if (!drag) return;
+    const targetAt = (x: number, y: number) => {
+      const el = document.elementFromPoint(x, y) as HTMLElement | null;
+      return {
+        cell: el?.closest<HTMLElement>("[data-cell]")?.dataset.cell ?? null,
+        rack: el?.closest<HTMLElement>("[data-rack-id]")?.dataset.rackId ?? null,
+        inRack: !!el?.closest("[data-rack]"),
+      };
+    };
+    const move = (e: PointerEvent) => {
+      const d = dragRef.current; if (!d) return;
+      const moving = d.moving || Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 6;
+      const next = { ...d, x: e.clientX, y: e.clientY, moving };
+      dragRef.current = next; setDrag(next);
+      if (moving) { e.preventDefault(); setHoverKey(targetAt(e.clientX, e.clientY).cell); }
+    };
+    const up = (e: PointerEvent) => {
+      const d = dragRef.current; dragRef.current = null; setDrag(null); setHoverKey(null);
+      if (!d || !d.moving) return; // a plain tap: let the click handler run
+      suppressClick.current = true; setTimeout(() => { suppressClick.current = false; }, 0);
+      const t = targetAt(e.clientX, e.clientY);
+      setPending((prev) => {
+        const next = new Map(prev);
+        if (d.fromKey) next.delete(d.fromKey);
+        if (t.cell) {
+          const [r, c] = t.cell.split(",").map(Number);
+          if (game.board[r!]?.[c!]) return prev; // occupied by a played tile
+          const displaced = next.get(t.cell);
+          if (displaced && d.fromKey) next.set(d.fromKey, displaced); // swap two placed tiles
+          next.set(t.cell, d.tile);
+        }
+        return next;
+      });
+      if (!t.cell && t.rack !== null && !d.fromKey) {
+        // reorder within the rack
+        setRack((prev) => {
+          const from = prev.findIndex((x) => x.id === d.tile.id);
+          const to = prev.findIndex((x) => String(x.id) === t.rack);
+          if (from < 0 || to < 0 || from === to) return prev;
+          const next = [...prev]; const [m] = next.splice(from, 1); next.splice(to, 0, m!); return next;
+        });
+      }
+      setSelected(null);
+    };
+    window.addEventListener("pointermove", move, { passive: false });
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); };
+  }, [drag !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function onRackClick(id: number) {
+    if (suppressClick.current) return;
     if (swapMode) {
       const s = new Set(swapPick); s.has(id) ? s.delete(id) : s.add(id); setSwapPick(s); return;
     }
@@ -115,7 +180,13 @@ function GamePage() {
     : myTurn ? "Your turn." : `Waiting for ${opp.name ?? "your opponent"}.`;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="grid gap-4 sm:gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      {drag?.moving && (
+        <div className="pointer-events-none fixed z-50 h-14 w-14 -translate-x-1/2 -translate-y-[85%] rotate-3 drop-shadow-xl"
+          style={{ left: drag.x, top: drag.y }} aria-hidden="true">
+          <Tile letter={drag.tile.letter} />
+        </div>
+      )}
       <div className="grid gap-4">
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">{statusText}</p>
@@ -124,18 +195,22 @@ function GamePage() {
           )}
         </div>
         {game.status === "finished" && <SaveGuestBanner text="Nice game! Create an account to keep this result and your place in the rankings." />}
-        <div className="mx-auto w-full max-w-[680px]">
-          <BoardGrid board={game.board} pending={pendingLetters} onCellClick={onCellClick} />
+        <div className="-mx-2 w-[calc(100%+1rem)] sm:mx-auto sm:w-full sm:max-w-[680px]">
+          <BoardGrid board={game.board} pending={pendingLetters} onCellClick={onCellClick} hoverKey={hoverKey}
+            onPendingPointerDown={(key, e) => { const t = pending.get(key); if (t) startDrag(t, key, e); }} />
         </div>
-        <div className="mx-auto flex w-full max-w-[680px] flex-col items-center gap-3">
-          <div className="flex gap-1.5 rounded-lg bg-secondary p-2">
+        <div className="sticky bottom-0 z-10 -mx-4 flex flex-col items-center gap-3 border-t border-border/60 bg-background/95 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:static sm:mx-auto sm:w-full sm:max-w-[680px] sm:border-0 sm:bg-transparent sm:p-0 sm:backdrop-blur-none">
+          <div data-rack className="flex w-full max-w-[420px] justify-center gap-1 rounded-lg bg-secondary p-1.5 sm:gap-1.5 sm:p-2">
             {rack.length === 0 && <span className="px-3 py-2 text-sm text-muted-foreground">No tiles</span>}
             {rack.map((t) => {
               const used = placedIds.has(t.id);
               return (
-                <button key={t.id} type="button" disabled={used || !myTurn} onClick={() => onRackClick(t.id)}
+                <button key={t.id} type="button" data-rack-id={t.id} disabled={used || !myTurn} onClick={() => onRackClick(t.id)}
+                  onPointerDown={(e) => !used && startDrag(t, null, e)}
+                  style={{ touchAction: "none" }}
                   aria-label={`Tile ${t.letter}`}
-                  className={cn("h-11 w-11 transition-transform sm:h-12 sm:w-12", used && "opacity-25",
+                  className={cn("aspect-square min-w-0 max-w-12 flex-1 select-none transition-transform", used && "opacity-25",
+                    drag?.moving && drag.tile.id === t.id && !drag.fromKey && "opacity-30",
                     (selected === t.id && !swapMode) && "-translate-y-1.5 ring-2 ring-brass rounded",
                     swapPick.has(t.id) && "-translate-y-1.5 ring-2 ring-destructive rounded")}>
                   <Tile letter={t.letter} />
@@ -144,7 +219,7 @@ function GamePage() {
             })}
           </div>
           {myTurn && (
-            <div className="flex flex-wrap justify-center gap-2">
+            <div className="flex flex-wrap justify-center gap-1.5 sm:gap-2">
               {swapMode ? (
                 <>
                   <Button variant="brass" disabled={busy || swapPick.size === 0}
@@ -164,7 +239,7 @@ function GamePage() {
               )}
             </div>
           )}
-          {myTurn && !swapMode && <p className="text-xs text-muted-foreground">Tap a tile, then tap a square. Tap a placed tile to take it back.</p>}
+          {myTurn && !swapMode && <p className="text-xs text-muted-foreground">Drag tiles onto the board, or tap a tile then a square. Drag a placed tile off the board to take it back.</p>}
         </div>
       </div>
 
