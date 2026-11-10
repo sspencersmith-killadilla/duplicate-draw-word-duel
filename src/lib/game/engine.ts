@@ -120,7 +120,7 @@ export function evaluatePlay(
     const idx = pool.indexOf(L);
     if (idx === -1) return { ok: false, error: `You don't have the letter ${L}.` };
     pool.splice(idx, 1);
-    if (p.r < 0 || p.r >= SIZE || p.c < 0 || p.c >= SIZE) return { ok: false, error: "Off the board." };
+    if (!Number.isInteger(p.r) || !Number.isInteger(p.c) || p.r < 0 || p.r >= SIZE || p.c < 0 || p.c >= SIZE) return { ok: false, error: "Off the board." };
     if (board[p.r]![p.c]) return { ok: false, error: "That square is taken." };
   }
   const keys = new Set(placements.map((p) => `${p.r},${p.c}`));

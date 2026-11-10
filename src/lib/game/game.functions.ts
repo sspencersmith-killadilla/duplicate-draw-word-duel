@@ -338,6 +338,33 @@ export const getGame = createServerFn({ method: "POST" })
     };
   });
 
+/** Read-only feedback: authenticate membership before loading the player's private rack. */
+export const previewPlay = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { gameId: string; placements: Placement[] }) => ({
+    gameId: String(input.gameId),
+    placements: (input.placements ?? []).slice(0, RACK_SIZE).map((p) => ({
+      r: Number(p.r), c: Number(p.c), letter: String(p.letter).toUpperCase().slice(0, 1),
+    })),
+  }))
+  .handler(async ({ data, context }) => {
+    const { data: game } = await context.supabase.from("games").select("*, daily_deals(deal_date)").eq("id", data.gameId).maybeSingle();
+    if (!game) throw new Error("Game not found");
+    const seat = game.north_id === context.userId ? "north" : game.south_id === context.userId ? "south" : null;
+    if (!seat) throw new Error("You're not in this game");
+    if (game.status !== "active" || game.turn !== seat) return { ok: false as const, error: "It's not your turn." };
+    const date = game.daily_deals?.deal_date;
+    if (!game.vs_bot && ((date && Date.now() > dealClosesAt(date).getTime()) || Date.now() - new Date(game.last_move_at).getTime() >= TURN_TIMEOUT_MS)) {
+      return { ok: false as const, error: "This turn has ended. Refresh the game." };
+    }
+    const db = await admin();
+    const { data: sec } = await db.from("game_secrets").select("north_rack, south_rack").eq("game_id", game.id).single();
+    if (!sec) throw new Error("Could not check your tiles. Try again.");
+    const { isWord } = await import("./dictionary.server");
+    const board = (Array.isArray(game.board) && game.board.length ? game.board : emptyBoard()) as Board;
+    return evaluatePlay(board, seat === "north" ? sec.north_rack : sec.south_rack, data.placements, isWord);
+  });
+
 export const playMove = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: { gameId: string; placements: Placement[] }) => ({

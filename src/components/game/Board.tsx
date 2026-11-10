@@ -1,5 +1,6 @@
 import { premiumAt, LETTER_VALUES, CENTER, type Board as BoardT } from "@/lib/game/engine";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 const premiumClass: Record<string, string> = {
   TW: "bg-premium-tw text-premium-foreground",
@@ -35,16 +36,16 @@ export function BoardGrid({ board, pending, onCellClick, onPendingPointerDown, h
         const p = pending.get(key);
         const prem = premiumAt(r, c);
         return (
-          <button key={key} type="button" data-cell={key} onClick={() => onCellClick(r, c)}
+          <Button variant="ghost" key={key} type="button" data-cell={key} onClick={() => onCellClick(r, c)}
             onPointerDown={p && onPendingPointerDown ? (e) => onPendingPointerDown(key, e) : undefined}
             style={p ? { touchAction: "none" } : undefined}
             aria-label={`Row ${r + 1}, column ${c + 1}${cell ? `, ${cell}` : ""}`}
-            className={cn("relative flex aspect-square items-center justify-center rounded-[3px] text-[clamp(0.4rem,1.3vw,0.6rem)] font-bold",
+            className={cn("relative flex h-auto min-w-0 p-0 aspect-square items-center justify-center rounded-[3px] text-[clamp(0.4rem,1.3vw,0.6rem)] font-bold",
               !cell && !p && (prem ? premiumClass[prem] : "bg-board"),
               hoverKey === key && !cell && "ring-2 ring-brass ring-inset brightness-125")}>
             {cell ? <Tile letter={cell} small /> : p ? <Tile letter={p} small className="bg-tile-new ring-2 ring-brass" /> :
               r === CENTER && c === CENTER ? <span className="text-brass text-[clamp(0.6rem,3vw,1rem)]">★</span> : prem}
-          </button>
+          </Button>
         );
       }))}
     </div>

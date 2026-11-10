@@ -18,6 +18,15 @@ describe("duplicate deal", () => {
 });
 
 describe("scoring", () => {
+  it("rejects invalid coordinates instead of crashing the placement check", () => {
+    for (const r of [NaN, Infinity, 7.5]) {
+      expect(evaluatePlay(emptyBoard(), "CAT", [{ r, c: 7, letter: "C" }], isWord).ok).toBe(false);
+    }
+  });
+  it("rejects a valid main word when a crossing word is invalid", () => {
+    const board = applyPlacements(emptyBoard(), [{ r: 6, c: 7, letter: "C" }]);
+    expect(evaluatePlay(board, "AT", [{ r: 7, c: 7, letter: "A" }, { r: 7, c: 8, letter: "T" }], isWord)).toEqual({ ok: false, error: "Not in the dictionary: CA" });
+  });
   it("scores the first word with the center square (no premium) as plain letter values", () => {
     const r = evaluatePlay(emptyBoard(), "CATXXXX", [
       { r: 7, c: 6, letter: "C" }, { r: 7, c: 7, letter: "A" }, { r: 7, c: 8, letter: "T" },

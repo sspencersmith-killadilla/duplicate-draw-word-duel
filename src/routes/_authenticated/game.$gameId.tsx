@@ -6,7 +6,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Shuffle, Undo2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { getGame, passTurn, playMove, swapTiles } from "@/lib/game/game.functions";
+import { getGame, passTurn, playMove, previewPlay, swapTiles } from "@/lib/game/game.functions";
+import type { MoveError, MoveResult } from "@/lib/game/engine";
 import { BoardGrid, Tile } from "@/components/game/Board";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,7 @@ function GamePage() {
   const play = useServerFn(playMove);
   const swap = useServerFn(swapTiles);
   const pass = useServerFn(passTurn);
+  const preview = useServerFn(previewPlay);
 
   const [rack, setRack] = useState<RackTile[]>([]);
   const [pending, setPending] = useState<Map<string, RackTile>>(new Map());
@@ -68,9 +70,30 @@ function GamePage() {
   const opp = game.seat === "north" ? game.south : game.north;
   const placedIds = useMemo(() => new Set([...pending.values()].map((t) => t.id)), [pending]);
   const pendingLetters = useMemo(() => new Map([...pending].map(([k, t]) => [k, t.letter])), [pending]);
+  const placements = useMemo(() => [...pending].map(([key, tile]) => {
+    const [r = -1, c = -1] = key.split(",").map(Number);
+    return { r, c, letter: tile.letter };
+  }), [pending]);
+  const previewKey = JSON.stringify([gameId, game.board, game.rack, game.moves.length, placements]);
+  const [validation, setValidation] = useState<{ key: string; result: MoveResult | MoveError } | null>(null);
+  const result = validation?.key === previewKey ? validation.result : null;
+
+  useEffect(() => {
+    if (!myTurn || swapMode || placements.length === 0) return;
+    let canceled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const checked = await preview({ data: { gameId, placements } });
+        if (!canceled) setValidation({ key: previewKey, result: checked });
+      } catch {
+        if (!canceled) setValidation({ key: previewKey, result: { ok: false, error: "Couldn't check this word. Move a tile to try again." } });
+      }
+    }, 250);
+    return () => { canceled = true; clearTimeout(timer); };
+  }, [gameId, myTurn, swapMode, placements, previewKey, preview]);
 
   function onCellClick(r: number, c: number) {
-    if (suppressClick.current || !myTurn || swapMode) return;
+    if (suppressClick.current || !myTurn || swapMode || busy) return;
     const key = `${r},${c}`;
     if (pending.has(key)) {
       const next = new Map(pending); next.delete(key); setPending(next); return;
@@ -84,15 +107,16 @@ function GamePage() {
   }
 
   // ---- Drag and drop (pointer events: works for mouse and touch) ----
-  type Drag = { tile: RackTile; fromKey: string | null; x: number; y: number; sx: number; sy: number; moving: boolean };
+  type Drag = { tile: RackTile; fromKey: string | null; x: number; y: number; sx: number; sy: number; moving: boolean; pointerId: number };
   const [drag, setDrag] = useState<Drag | null>(null);
   const [hoverKey, setHoverKey] = useState<string | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const suppressClick = useRef(false);
 
   function startDrag(tile: RackTile, fromKey: string | null, e: React.PointerEvent) {
-    if (!myTurn || swapMode || e.button > 0) return;
-    const d = { tile, fromKey, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moving: false };
+    if (!myTurn || swapMode || busy || e.button > 0 || dragRef.current) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const d = { tile, fromKey, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, moving: false, pointerId: e.pointerId };
     dragRef.current = d; setDrag(d);
   }
 
@@ -107,23 +131,24 @@ function GamePage() {
       };
     };
     const move = (e: PointerEvent) => {
-      const d = dragRef.current; if (!d) return;
+      const d = dragRef.current; if (!d || e.pointerId !== d.pointerId) return;
       const moving = d.moving || Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 6;
       const next = { ...d, x: e.clientX, y: e.clientY, moving };
       dragRef.current = next; setDrag(next);
       if (moving) { e.preventDefault(); setHoverKey(targetAt(e.clientX, e.clientY).cell); }
     };
     const up = (e: PointerEvent) => {
+      if (e.pointerId !== dragRef.current?.pointerId) return;
       const d = dragRef.current; dragRef.current = null; setDrag(null); setHoverKey(null);
-      if (!d || !d.moving) return; // a plain tap: let the click handler run
+      if (!d || !d.moving || !myTurn || busy) return; // a plain tap: let the click handler run
       suppressClick.current = true; setTimeout(() => { suppressClick.current = false; }, 0);
       const t = targetAt(e.clientX, e.clientY);
       setPending((prev) => {
         const next = new Map(prev);
         if (d.fromKey) next.delete(d.fromKey);
         if (t.cell) {
-          const [r, c] = t.cell.split(",").map(Number);
-          if (game.board[r!]?.[c!]) return prev; // occupied by a played tile
+          const [r = -1, c = -1] = t.cell.split(",").map(Number);
+          if (game.board[r]?.[c]) return prev; // occupied by a played tile
           const displaced = next.get(t.cell);
           if (displaced && d.fromKey) next.set(d.fromKey, displaced); // swap two placed tiles
           next.set(t.cell, d.tile);
@@ -136,19 +161,25 @@ function GamePage() {
           const from = prev.findIndex((x) => x.id === d.tile.id);
           const to = prev.findIndex((x) => String(x.id) === t.rack);
           if (from < 0 || to < 0 || from === to) return prev;
-          const next = [...prev]; const [m] = next.splice(from, 1); next.splice(to, 0, m!); return next;
+          const next = [...prev]; const [m] = next.splice(from, 1);
+          if (!m) return prev;
+          next.splice(to, 0, m); return next;
         });
       }
       setSelected(null);
     };
+    const cancel = (e: PointerEvent) => {
+      if (e.pointerId !== dragRef.current?.pointerId) return;
+      dragRef.current = null; setDrag(null); setHoverKey(null);
+    };
     window.addEventListener("pointermove", move, { passive: false });
     window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", up);
-    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up); };
-  }, [drag !== null]); // eslint-disable-line react-hooks/exhaustive-deps
+    window.addEventListener("pointercancel", cancel);
+    return () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", cancel); };
+  }, [drag !== null, game.board, myTurn, busy]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function onRackClick(id: number) {
-    if (suppressClick.current) return;
+    if (suppressClick.current || busy || !myTurn) return;
     if (swapMode) {
       const s = new Set(swapPick); s.has(id) ? s.delete(id) : s.add(id); setSwapPick(s); return;
     }
@@ -171,7 +202,7 @@ function GamePage() {
   }
 
   const submitPlay = () => act(
-    () => play({ data: { gameId, placements: [...pending].map(([k, t]) => { const [r, c] = k.split(",").map(Number); return { r: r!, c: c!, letter: t.letter }; }) } }),
+    () => play({ data: { gameId, placements } }),
     (r) => { const res = r as { score: number; words: string[] }; return `${res.words.join(", ")} for ${res.score} points`; },
   );
 
@@ -205,16 +236,16 @@ function GamePage() {
             {rack.map((t) => {
               const used = placedIds.has(t.id);
               return (
-                <button key={t.id} type="button" data-rack-id={t.id} disabled={used || !myTurn} onClick={() => onRackClick(t.id)}
+                <Button variant="ghost" key={t.id} type="button" data-rack-id={t.id} disabled={used || !myTurn || busy} onClick={() => onRackClick(t.id)}
                   onPointerDown={(e) => !used && startDrag(t, null, e)}
                   style={{ touchAction: "none" }}
                   aria-label={`Tile ${t.letter}`}
-                  className={cn("aspect-square min-w-0 max-w-12 flex-1 select-none transition-transform", used && "opacity-25",
+                  className={cn("h-auto aspect-square min-w-0 max-w-12 flex-1 p-0 select-none transition-transform", used && "opacity-25",
                     drag?.moving && drag.tile.id === t.id && !drag.fromKey && "opacity-30",
                     (selected === t.id && !swapMode) && "-translate-y-1.5 ring-2 ring-brass rounded",
                     swapPick.has(t.id) && "-translate-y-1.5 ring-2 ring-destructive rounded")}>
                   <Tile letter={t.letter} />
-                </button>
+                </Button>
               );
             })}
           </div>
@@ -230,16 +261,18 @@ function GamePage() {
                 </>
               ) : (
                 <>
-                  <Button variant="brass" disabled={busy || pending.size === 0} onClick={submitPlay}>Play word</Button>
-                  <Button variant="felt" size="icon" aria-label="Recall tiles" onClick={() => setPending(new Map())}><Undo2 /></Button>
-                  <Button variant="felt" size="icon" aria-label="Shuffle rack" onClick={() => setRack([...rack].sort(() => Math.random() - 0.5))}><Shuffle /></Button>
-                  <Button variant="felt" onClick={() => { setPending(new Map()); setSwapMode(true); }}>Swap</Button>
+                  <Button variant="brass" disabled={busy || !result?.ok || pending.size === 0} onClick={submitPlay}>Play word</Button>
+                  <Button variant="felt" size="icon" disabled={busy} title="Recall tiles" aria-label="Recall tiles" onClick={() => setPending(new Map())}><Undo2 /></Button>
+                  <Button variant="felt" size="icon" disabled={busy} title="Shuffle rack" aria-label="Shuffle rack" onClick={() => setRack([...rack].sort(() => Math.random() - 0.5))}><Shuffle /></Button>
+                  <Button variant="felt" disabled={busy} onClick={() => { setPending(new Map()); setSwapMode(true); }}>Swap</Button>
                   <Button variant="felt" disabled={busy} onClick={() => act(() => pass({ data: { gameId } }), () => "You passed")}>Pass</Button>
                 </>
               )}
             </div>
           )}
-          {myTurn && !swapMode && <p className="text-xs text-muted-foreground">Drag tiles onto the board, or tap a tile then a square. Drag a placed tile off the board to take it back.</p>}
+          {myTurn && !swapMode && <p role="status" aria-live="polite" className={cn("min-h-8 w-full text-center text-sm", result && !result.ok ? "text-destructive" : "text-muted-foreground")}>
+            {pending.size > 0 ? result ? result.ok ? `${result.words.join(", ")} · ${result.score} points · Playable` : result.error : "Checking word…" : ""}
+          </p>}
         </div>
       </div>
 
