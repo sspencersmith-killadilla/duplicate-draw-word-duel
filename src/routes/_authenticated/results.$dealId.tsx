@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 const resultsQuery = (dealId: string) => queryOptions({ queryKey: ["results", dealId], queryFn: () => getDealResults({ data: { dealId } }) });
 
 export const Route = createFileRoute("/_authenticated/results/$dealId")({
+  staticData: { sitemap: false },
   head: () => ({
     meta: [
       { title: "Deal results — Duplicate Draw" },

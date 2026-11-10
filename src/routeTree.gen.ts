@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as AuthRouteImport } from './routes/auth'
+import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as AuthenticatedLeaderboardRouteImport } from './routes/_authenticated/leaderboard'
 import { Route as AuthenticatedLobbyRouteImport } from './routes/_authenticated/lobby'
 import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
@@ -30,6 +31,11 @@ const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
   path: '/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
+  id: '/sitemap.xml',
+  path: '/sitemap.xml',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedLeaderboardRoute =
@@ -63,6 +69,7 @@ const AuthenticatedResultsDealIdRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/lobby': typeof AuthenticatedLobbyRoute
   '/profile': typeof AuthenticatedProfileRoute
@@ -72,6 +79,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/lobby': typeof AuthenticatedLobbyRoute
   '/profile': typeof AuthenticatedProfileRoute
@@ -83,6 +91,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/leaderboard': typeof AuthenticatedLeaderboardRoute
   '/_authenticated/lobby': typeof AuthenticatedLobbyRoute
   '/_authenticated/profile': typeof AuthenticatedProfileRoute
@@ -94,6 +103,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/sitemap.xml'
     | '/leaderboard'
     | '/lobby'
     | '/profile'
@@ -103,6 +113,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/sitemap.xml'
     | '/leaderboard'
     | '/lobby'
     | '/profile'
@@ -113,6 +124,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/sitemap.xml'
     | '/_authenticated/leaderboard'
     | '/_authenticated/lobby'
     | '/_authenticated/profile'
@@ -124,6 +136,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  SitemapDotxmlRoute: typeof SitemapDotxmlRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -147,6 +160,13 @@ declare module '@tanstack/react-router' {
       path: '/auth'
       fullPath: '/auth'
       preLoaderRoute: typeof AuthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sitemap.xml': {
+      id: '/sitemap.xml'
+      path: '/sitemap.xml'
+      fullPath: '/sitemap.xml'
+      preLoaderRoute: typeof SitemapDotxmlRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/leaderboard': {
@@ -210,6 +230,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  SitemapDotxmlRoute: SitemapDotxmlRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 const lbQuery = queryOptions({ queryKey: ["leaderboard"], queryFn: () => getLeaderboard() });
 
 export const Route = createFileRoute("/_authenticated/leaderboard")({
+  staticData: { sitemap: false },
   head: () => ({
     meta: [
       { title: "Rankings — Duplicate Draw" },

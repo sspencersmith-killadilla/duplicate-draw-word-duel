@@ -12,3 +12,5 @@ Allow: /
 
 User-agent: *
 Allow: /
+
+Sitemap: https://duplicatedraw.alphastackgame.com/sitemap.xml

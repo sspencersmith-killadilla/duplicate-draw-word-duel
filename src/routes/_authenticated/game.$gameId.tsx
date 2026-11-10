@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 const gameQuery = (gameId: string) => queryOptions({ queryKey: ["game", gameId], queryFn: () => getGame({ data: { gameId } }) });
 
 export const Route = createFileRoute("/_authenticated/game/$gameId")({
+  staticData: { sitemap: false },
   head: () => ({
     meta: [
       { title: "Game — Duplicate Draw" },

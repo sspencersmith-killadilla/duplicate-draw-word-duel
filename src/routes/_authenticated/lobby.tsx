@@ -11,6 +11,7 @@ export const lobbyQuery = queryOptions({ queryKey: ["lobby"], queryFn: () => get
 export const botQuery = queryOptions({ queryKey: ["lobby", "bot"], queryFn: () => getBotDeals() });
 
 export const Route = createFileRoute("/_authenticated/lobby")({
+  staticData: { sitemap: false },
   head: () => ({
     meta: [
       { title: "Lobby — Duplicate Draw" },

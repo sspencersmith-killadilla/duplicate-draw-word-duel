@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 const lobbyQuery = queryOptions({ queryKey: ["lobby"], queryFn: () => getLobby() });
 
 export const Route = createFileRoute("/_authenticated/profile")({
+  staticData: { sitemap: false },
   head: () => ({
     meta: [
       { title: "Profile — Duplicate Draw" },
