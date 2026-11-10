@@ -15,9 +15,9 @@ const gameQuery = (gameId: string) => queryOptions({ queryKey: ["game", gameId],
 export const Route = createFileRoute("/_authenticated/game/$gameId")({
   head: () => ({
     meta: [
-      { title: "Game — Duplicate Words" },
+      { title: "Game — Duplicate Draw" },
       { name: "description", content: "Your head-to-head game on the daily deal." },
-      { property: "og:title", content: "Game — Duplicate Words" },
+      { property: "og:title", content: "Game — Duplicate Draw" },
       { property: "og:description", content: "Your head-to-head game on the daily deal." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

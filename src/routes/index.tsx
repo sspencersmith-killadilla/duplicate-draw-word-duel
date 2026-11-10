@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Duplicate Words — the daily word game scored like bridge" },
+      { title: "Duplicate Draw — the daily word game scored like bridge" },
       { name: "description", content: "Play a head-to-head word game where every table gets the same tiles, then see how you ranked against everyone who held your seat." },
-      { property: "og:title", content: "Duplicate Words — the daily word game scored like bridge" },
+      { property: "og:title", content: "Duplicate Draw — the daily word game scored like bridge" },
       { property: "og:description", content: "Same tiles for every table. Beat your opponent, then beat the field." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -26,7 +26,7 @@ function Index() {
     <div className="py-10">
       <section className="grid items-center gap-10 md:grid-cols-[1.2fr_1fr]">
         <div>
-          <p className="mb-3 text-sm uppercase tracking-[0.2em] text-primary">The duplicate word game</p>
+          <p className="mb-3 text-sm uppercase tracking-[0.2em] text-primary">The duplicate draw word game</p>
           <h1 className="text-5xl font-semibold leading-[1.05] md:text-6xl">Same tiles.<br />Different minds.</h1>
           <p className="mt-5 max-w-lg text-lg text-muted-foreground">
             Like duplicate bridge, every table plays the same deal. You face one opponent, but you're really measured against everyone who drew your tiles.

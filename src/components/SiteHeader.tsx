@@ -8,7 +8,7 @@ export function Logo() {
   return (
     <Link to="/" className="flex items-center gap-2">
       <span className="tile flex h-8 w-8 items-center justify-center text-lg">D</span>
-      <span className="font-display text-xl font-semibold tracking-tight">Duplicate Words</span>
+      <span className="font-display text-xl font-semibold tracking-tight">Duplicate Draw</span>
     </Link>
   );
 }

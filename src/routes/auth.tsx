@@ -11,9 +11,9 @@ import { Label } from "@/components/ui/label";
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Sign in — Duplicate Words" },
-      { name: "description", content: "Sign in or create an account to play the daily Duplicate Words deal." },
-      { property: "og:title", content: "Sign in — Duplicate Words" },
+      { title: "Sign in — Duplicate Draw" },
+      { name: "description", content: "Sign in or create an account to play the daily Duplicate Draw deal." },
+      { property: "og:title", content: "Sign in — Duplicate Draw" },
       { property: "og:description", content: "Sign in to play today's deal." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

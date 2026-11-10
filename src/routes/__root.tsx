@@ -84,9 +84,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Duplicate Words" },
+      { title: "Duplicate Draw" },
       { name: "description", content: "A daily head-to-head word game where everyone gets the same tiles." },
-      { property: "og:title", content: "Duplicate Words" },
+      { property: "og:title", content: "Duplicate Draw" },
       { property: "og:description", content: "A daily head-to-head word game where everyone gets the same tiles." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },

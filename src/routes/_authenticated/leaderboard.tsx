@@ -8,9 +8,9 @@ const lbQuery = queryOptions({ queryKey: ["leaderboard"], queryFn: () => getLead
 export const Route = createFileRoute("/_authenticated/leaderboard")({
   head: () => ({
     meta: [
-      { title: "Rankings — Duplicate Words" },
+      { title: "Rankings — Duplicate Draw" },
       { name: "description", content: "All-time rankings by average matchpoints and win record." },
-      { property: "og:title", content: "Rankings — Duplicate Words" },
+      { property: "og:title", content: "Rankings — Duplicate Draw" },
       { property: "og:description", content: "All-time rankings by average matchpoints." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

@@ -12,9 +12,9 @@ const lobbyQuery = queryOptions({ queryKey: ["lobby"], queryFn: () => getLobby()
 export const Route = createFileRoute("/_authenticated/lobby")({
   head: () => ({
     meta: [
-      { title: "Lobby — Duplicate Words" },
+      { title: "Lobby — Duplicate Draw" },
       { name: "description", content: "Today's deal, your games and challenges." },
-      { property: "og:title", content: "Lobby — Duplicate Words" },
+      { property: "og:title", content: "Lobby — Duplicate Draw" },
       { property: "og:description", content: "Today's deal, your games and challenges." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },

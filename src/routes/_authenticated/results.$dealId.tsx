@@ -9,9 +9,9 @@ const resultsQuery = (dealId: string) => queryOptions({ queryKey: ["results", de
 export const Route = createFileRoute("/_authenticated/results/$dealId")({
   head: () => ({
     meta: [
-      { title: "Deal results — Duplicate Words" },
+      { title: "Deal results — Duplicate Draw" },
       { name: "description", content: "How every player in your seat scored on this deal." },
-      { property: "og:title", content: "Deal results — Duplicate Words" },
+      { property: "og:title", content: "Deal results — Duplicate Draw" },
       { property: "og:description", content: "How every player in your seat scored on this deal." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
