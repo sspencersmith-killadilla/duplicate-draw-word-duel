@@ -16,19 +16,25 @@ export type Database = {
     Tables: {
       daily_deals: {
         Row: {
+          bot_number: number | null
           created_at: string
           deal_date: string
           id: string
+          kind: string
         }
         Insert: {
+          bot_number?: number | null
           created_at?: string
           deal_date: string
           id?: string
+          kind?: string
         }
         Update: {
+          bot_number?: number | null
           created_at?: string
           deal_date?: string
           id?: string
+          kind?: string
         }
         Relationships: []
       }
@@ -109,6 +115,7 @@ export type Database = {
           south_score: number
           status: string
           turn: string
+          vs_bot: boolean
         }
         Insert: {
           board?: Json
@@ -128,6 +135,7 @@ export type Database = {
           south_score?: number
           status?: string
           turn?: string
+          vs_bot?: boolean
         }
         Update: {
           board?: Json
@@ -147,6 +155,7 @@ export type Database = {
           south_score?: number
           status?: string
           turn?: string
+          vs_bot?: boolean
         }
         Relationships: [
           {

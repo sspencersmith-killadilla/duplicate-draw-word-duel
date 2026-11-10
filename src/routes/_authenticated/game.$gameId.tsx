@@ -167,7 +167,7 @@ function GamePage() {
 
       <aside className="grid content-start gap-4">
         <div className="paper rounded-xl p-4">
-          <p className="text-xs uppercase tracking-[0.2em] opacity-60">Deal of {game.dealDate}</p>
+          <p className="text-xs uppercase tracking-[0.2em] opacity-60">{game.botNumber ? `Bot deal #${game.botNumber}` : `Deal of ${game.dealDate}`}</p>
           {[{ label: "You", p: me, seat: game.seat }, { label: opp.name ?? "Open seat", p: opp, seat: game.seat === "north" ? "south" : "north" }].map(({ label, p, seat }) => (
             <div key={seat} className={cn("mt-3 flex items-center justify-between rounded-md px-3 py-2", game.turn === seat && game.status === "active" && "bg-tile-new/50")}>
               <div>

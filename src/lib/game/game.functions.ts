@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import {
   applyPlacements, dealSeats, emptyBoard, evaluatePlay, matchpointPercent, rackValue, refill,
-  removeFromRack, DEAL_OPEN_HOURS, PASS_LIMIT, RACK_SIZE, type Board, type Placement,
+  removeFromRack, bestMove, BOT_ID, DEAL_OPEN_HOURS, PASS_LIMIT, RACK_SIZE, type Board, type Placement,
 } from "./engine";
 
 type Seat = "north" | "south";
@@ -20,7 +20,7 @@ function todayUtc() {
 
 async function ensureTodayDeal(db: Admin) {
   const date = todayUtc();
-  let { data: deal } = await db.from("daily_deals").select("*").eq("deal_date", date).maybeSingle();
+  let { data: deal } = await db.from("daily_deals").select("*").eq("kind", "daily").eq("deal_date", date).maybeSingle();
   if (!deal) {
     const { data: inserted } = await db.from("daily_deals").insert({ deal_date: date }).select().maybeSingle();
     if (inserted) {
@@ -28,7 +28,7 @@ async function ensureTodayDeal(db: Admin) {
       await db.from("deal_secrets").insert({ deal_id: inserted.id, north_tiles: seats.north, south_tiles: seats.south });
       deal = inserted;
     } else {
-      ({ data: deal } = await db.from("daily_deals").select("*").eq("deal_date", date).maybeSingle());
+      ({ data: deal } = await db.from("daily_deals").select("*").eq("kind", "daily").eq("deal_date", date).maybeSingle());
     }
   }
   if (!deal) throw new Error("Could not load today's deal");
@@ -46,14 +46,14 @@ async function usernames(db: Admin, ids: (string | null)[]) {
   return Object.fromEntries((data ?? []).map((p) => [p.id, p.username])) as Record<string, string>;
 }
 
-async function createGame(db: Admin, dealId: string, northId: string, southId: string | null) {
+async function createGame(db: Admin, dealId: string, northId: string, southId: string | null, vsBot = false) {
   const { data: secret } = await db.from("deal_secrets").select("*").eq("deal_id", dealId).single();
   if (!secret) throw new Error("Deal not ready");
   const n = refill("", secret.north_tiles);
   const s = refill("", secret.south_tiles);
   const { data: game, error } = await db.from("games").insert({
     deal_id: dealId, north_id: northId, south_id: southId,
-    status: southId ? "active" : "waiting", board: emptyBoard(),
+    status: southId || vsBot ? "active" : "waiting", board: emptyBoard(), vs_bot: vsBot,
     north_rack_count: n.rack.length, south_rack_count: s.rack.length,
     north_remaining: n.stream.length, south_remaining: s.stream.length,
   }).select().single();
@@ -69,6 +69,7 @@ async function settle(db: Admin, gameId: string) {
   const { data: game } = await db.from("games").select("*, daily_deals(deal_date)").eq("id", gameId).single();
   if (!game) return;
   if (game.status === "finished" || game.status === "expired") return;
+  if (game.vs_bot) return; // bot games never expire or time out
   const dealDate = (game.daily_deals as { deal_date: string } | null)?.deal_date;
   const closed = dealDate ? Date.now() > dealClosesAt(dealDate).getTime() : false;
   if (game.status === "waiting") {
@@ -121,6 +122,120 @@ async function loadForMove(db: Admin, gameId: string, userId: string) {
   return { game, sec, seat };
 }
 
+
+type GameRow = { id: string; board: unknown; north_score: number; south_score: number };
+type SecretRow = { north_rack: string; south_rack: string; north_stream: string; south_stream: string };
+
+async function applyPlay(
+  db: Admin, game: GameRow, sec: SecretRow, seat: Seat, playerId: string,
+  placements: Placement[], result: { score: number; words: string[] },
+) {
+  const board = (Array.isArray(game.board) && game.board.length ? game.board : emptyBoard()) as Board;
+  const rack = seat === "north" ? sec.north_rack : sec.south_rack;
+  const left = removeFromRack(rack, placements.map((p) => p.letter));
+  const stream = seat === "north" ? sec.north_stream : sec.south_stream;
+  const refilled = refill(left, stream);
+  const oppRack = seat === "north" ? sec.south_rack : sec.north_rack;
+  let myScore = (seat === "north" ? game.north_score : game.south_score) + result.score;
+  let oppScore = seat === "north" ? game.south_score : game.north_score;
+  const finished = refilled.rack.length === 0;
+  if (finished) {
+    myScore += rackValue(oppRack);
+    oppScore -= rackValue(oppRack);
+  }
+  const now = new Date().toISOString();
+  await db.from("game_secrets").update(seat === "north"
+    ? { north_rack: refilled.rack, north_stream: refilled.stream }
+    : { south_rack: refilled.rack, south_stream: refilled.stream }).eq("game_id", game.id);
+  await db.from("moves").insert({ game_id: game.id, seat, player_id: playerId, kind: "play", words: result.words, score: result.score });
+  await db.from("games").update({
+    board: applyPlacements(board, placements),
+    turn: seat === "north" ? "south" : "north",
+    consecutive_passes: 0, last_move_at: now,
+    [`${seat}_score`]: myScore,
+    [`${seat === "north" ? "south" : "north"}_score`]: oppScore,
+    [`${seat}_rack_count`]: refilled.rack.length,
+    [`${seat}_remaining`]: refilled.stream.length,
+    ...(finished ? { status: "finished", finished_at: now } : {}),
+  }).eq("id", game.id);
+  return { finished };
+}
+
+/** If it's the bot's turn (South in a bot game), play its best move or pass. */
+async function runBot(db: Admin, gameId: string) {
+  const { data: game } = await db.from("games").select("*").eq("id", gameId).single();
+  if (!game || !game.vs_bot || game.status !== "active" || game.turn !== "south") return;
+  const { data: sec } = await db.from("game_secrets").select("*").eq("game_id", gameId).single();
+  if (!sec) return;
+  const { isWord, isPrefix } = await import("./dictionary.server");
+  const board = (Array.isArray(game.board) && game.board.length ? game.board : emptyBoard()) as Board;
+  const move = bestMove(board, sec.south_rack, isWord, isPrefix);
+  if (move) {
+    await applyPlay(db, game, sec, "south", BOT_ID, move.placements, move);
+    return;
+  }
+  const passes = game.consecutive_passes + 1;
+  await db.from("moves").insert({ game_id: gameId, seat: "south", player_id: BOT_ID, kind: "pass" });
+  await db.from("games").update({ turn: "north", consecutive_passes: passes, last_move_at: new Date().toISOString() }).eq("id", gameId);
+  if (passes >= PASS_LIMIT) await finishByPasses(db, gameId);
+}
+
+export const BOT_DEAL_COUNT = 20;
+
+async function ensureBotDeals(db: Admin) {
+  const { data: existing } = await db.from("daily_deals").select("*").eq("kind", "bot").order("bot_number");
+  const have = new Set((existing ?? []).map((d) => d.bot_number));
+  const today = todayUtc();
+  for (let n = 1; n <= BOT_DEAL_COUNT; n++) {
+    if (have.has(n)) continue;
+    const { data: inserted } = await db.from("daily_deals").insert({ deal_date: today, kind: "bot", bot_number: n }).select().maybeSingle();
+    if (inserted) {
+      const seats = dealSeats(`bot:${n}:${crypto.randomUUID()}`);
+      await db.from("deal_secrets").insert({ deal_id: inserted.id, north_tiles: seats.north, south_tiles: seats.south });
+    }
+  }
+  const { data } = await db.from("daily_deals").select("*").eq("kind", "bot").order("bot_number");
+  return data ?? [];
+}
+
+export const getBotDeals = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const db = await admin();
+    const deals = await ensureBotDeals(db);
+    const ids = deals.map((d) => d.id);
+    const { data: games } = await db.from("games").select("id, deal_id, north_id, north_score, south_score, status")
+      .eq("vs_bot", true).in("deal_id", ids).limit(10000);
+    return deals.map((d) => {
+      const list = (games ?? []).filter((g) => g.deal_id === d.id);
+      const finished = list.filter((g) => g.status === "finished");
+      const mine = list.find((g) => g.north_id === context.userId);
+      const field = finished.filter((g) => g.id !== mine?.id).map((g) => g.north_score);
+      return {
+        id: d.id, number: d.bot_number ?? 0, players: finished.length,
+        best: finished.length ? Math.max(...finished.map((g) => g.north_score)) : null,
+        mine: mine ? {
+          gameId: mine.id, status: mine.status, score: mine.north_score, botScore: mine.south_score,
+          mp: mine.status === "finished" ? matchpointPercent(mine.north_score, field) : null,
+        } : null,
+      };
+    });
+  });
+
+export const startBotGame = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: { dealId: string }) => ({ dealId: String(input.dealId) }))
+  .handler(async ({ data, context }) => {
+    const db = await admin();
+    const { data: deal } = await db.from("daily_deals").select("id, kind").eq("id", data.dealId).maybeSingle();
+    if (!deal || deal.kind !== "bot") throw new Error("Deal not found");
+    const { data: already } = await db.from("games").select("id")
+      .eq("deal_id", deal.id).eq("north_id", context.userId).limit(1);
+    if (already?.length) return { gameId: already[0]!.id };
+    const game = await createGame(db, deal.id, context.userId, null, true);
+    return { gameId: game.id };
+  });
+
 export const getLobby = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -144,7 +259,8 @@ export const getLobby = createServerFn({ method: "POST" })
           id: g.id, status: g.status, seat, dealId: g.deal_id,
           dealDate: (g.daily_deals as { deal_date: string } | null)?.deal_date ?? "",
           myTurn: g.status === "active" && g.turn === seat,
-          opponent: oppId ? names[oppId] ?? "player" : null,
+          opponent: g.vs_bot ? "Computer" : oppId ? names[oppId] ?? "player" : null,
+          vsBot: g.vs_bot,
           myScore: seat === "north" ? g.north_score : g.south_score,
           oppScore: seat === "north" ? g.south_score : g.north_score,
           lastMoveAt: g.last_move_at,
@@ -202,7 +318,7 @@ export const getGame = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const db = await admin();
     await settle(db, data.gameId);
-    const { data: game } = await db.from("games").select("*, daily_deals(deal_date)").eq("id", data.gameId).maybeSingle();
+    const { data: game } = await db.from("games").select("*, daily_deals(deal_date, kind, bot_number)").eq("id", data.gameId).maybeSingle();
     if (!game) throw new Error("Game not found");
     const seat: Seat | null = game.north_id === context.userId ? "north" : game.south_id === context.userId ? "south" : null;
     if (!seat) throw new Error("You're not in this game");
@@ -212,10 +328,12 @@ export const getGame = createServerFn({ method: "POST" })
     return {
       id: game.id, status: game.status, turn: game.turn as Seat, seat, dealId: game.deal_id,
       dealDate: (game.daily_deals as { deal_date: string } | null)?.deal_date ?? "",
+      vsBot: game.vs_bot,
+      botNumber: (game.daily_deals as { bot_number: number | null } | null)?.bot_number ?? null,
       board: (Array.isArray(game.board) && game.board.length ? game.board : emptyBoard()) as Board,
       rack: seat === "north" ? sec?.north_rack ?? "" : sec?.south_rack ?? "",
       north: { name: game.north_id ? names[game.north_id] ?? "player" : null, score: game.north_score, rackCount: game.north_rack_count, remaining: game.north_remaining },
-      south: { name: game.south_id ? names[game.south_id] ?? "player" : null, score: game.south_score, rackCount: game.south_rack_count, remaining: game.south_remaining },
+      south: { name: game.vs_bot ? "Computer" : game.south_id ? names[game.south_id] ?? "player" : null, score: game.south_score, rackCount: game.south_rack_count, remaining: game.south_remaining },
       moves: (moves ?? []).map((m) => ({ id: m.id, seat: m.seat as Seat, kind: m.kind, words: m.words, score: m.score, at: m.created_at })),
     };
   });
@@ -236,32 +354,8 @@ export const playMove = createServerFn({ method: "POST" })
     const rack = seat === "north" ? sec.north_rack : sec.south_rack;
     const result = evaluatePlay(board, rack, data.placements, isWord);
     if (!result.ok) throw new Error(result.error);
-    const left = removeFromRack(rack, data.placements.map((p) => p.letter));
-    const stream = seat === "north" ? sec.north_stream : sec.south_stream;
-    const refilled = refill(left, stream);
-    const oppRack = seat === "north" ? sec.south_rack : sec.north_rack;
-    let myScore = (seat === "north" ? game.north_score : game.south_score) + result.score;
-    let oppScore = seat === "north" ? game.south_score : game.north_score;
-    const finished = refilled.rack.length === 0;
-    if (finished) {
-      myScore += rackValue(oppRack);
-      oppScore -= rackValue(oppRack);
-    }
-    const now = new Date().toISOString();
-    await db.from("game_secrets").update(seat === "north"
-      ? { north_rack: refilled.rack, north_stream: refilled.stream }
-      : { south_rack: refilled.rack, south_stream: refilled.stream }).eq("game_id", game.id);
-    await db.from("moves").insert({ game_id: game.id, seat, player_id: context.userId, kind: "play", words: result.words, score: result.score });
-    await db.from("games").update({
-      board: applyPlacements(board, data.placements),
-      turn: seat === "north" ? "south" : "north",
-      consecutive_passes: 0, last_move_at: now,
-      [`${seat}_score`]: myScore,
-      [`${seat === "north" ? "south" : "north"}_score`]: oppScore,
-      [`${seat}_rack_count`]: refilled.rack.length,
-      [`${seat}_remaining`]: refilled.stream.length,
-      ...(finished ? { status: "finished", finished_at: now } : {}),
-    }).eq("id", game.id);
+    const { finished } = await applyPlay(db, game, sec, seat, context.userId, data.placements, result);
+    if (!finished) await runBot(db, game.id);
     return { score: result.score, words: result.words, finished };
   });
 
@@ -291,6 +385,7 @@ export const swapTiles = createServerFn({ method: "POST" })
       turn: seat === "north" ? "south" : "north", consecutive_passes: passes, last_move_at: new Date().toISOString(),
     }).eq("id", game.id);
     if (passes >= PASS_LIMIT) await finishByPasses(db, game.id);
+    else await runBot(db, game.id);
     return { ok: true };
   });
 
@@ -306,6 +401,7 @@ export const passTurn = createServerFn({ method: "POST" })
       turn: seat === "north" ? "south" : "north", consecutive_passes: passes, last_move_at: new Date().toISOString(),
     }).eq("id", game.id);
     if (passes >= PASS_LIMIT) await finishByPasses(db, game.id);
+    else await runBot(db, game.id);
     return { ok: true };
   });
 
@@ -339,16 +435,17 @@ export const getDealResults = createServerFn({ method: "POST" })
     if (!deal) throw new Error("Deal not found");
     const { data: mine } = await db.from("games").select("id, status")
       .eq("deal_id", deal.id).or(`north_id.eq.${context.userId},south_id.eq.${context.userId}`).maybeSingle();
-    const open = Date.now() <= dealClosesAt(deal.deal_date).getTime();
+    const isBot = deal.kind === "bot";
+    const open = isBot || Date.now() <= dealClosesAt(deal.deal_date).getTime();
     if (open && mine?.status !== "finished") {
       throw new Error("Finish your game on this deal to see how the field did.");
     }
     const { data: games } = await db.from("games").select("id, deal_id, north_id, south_id, north_score, south_score")
-      .eq("deal_id", deal.id).eq("status", "finished").not("south_id", "is", null);
+      .eq("deal_id", deal.id).eq("status", "finished").or("south_id.not.is.null,vs_bot.eq.true");
     const rows = seatResults((games ?? []) as FinishedGame[]);
     const names = await usernames(db, rows.map((r) => r.playerId));
     return {
-      deal: { id: deal.id, date: deal.deal_date, closesAt: dealClosesAt(deal.deal_date).toISOString(), open },
+      deal: { id: deal.id, date: deal.deal_date, closesAt: dealClosesAt(deal.deal_date).toISOString(), open, botNumber: isBot ? deal.bot_number : null },
       myGameId: mine?.id ?? null,
       rows: rows.map((r) => ({ ...r, name: names[r.playerId] ?? "player", isMe: r.playerId === context.userId }))
         .sort((a, b) => b.score - a.score),

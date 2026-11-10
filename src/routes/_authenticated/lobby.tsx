@@ -3,11 +3,12 @@ import { queryOptions, useSuspenseQuery, useQueryClient } from "@tanstack/react-
 import { useState } from "react";
 import { toast } from "sonner";
 import { useServerFn } from "@tanstack/react-start";
-import { challengePlayer, findOpponent, getLobby } from "@/lib/game/game.functions";
+import { challengePlayer, findOpponent, getBotDeals, getLobby, startBotGame } from "@/lib/game/game.functions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-const lobbyQuery = queryOptions({ queryKey: ["lobby"], queryFn: () => getLobby() });
+export const lobbyQuery = queryOptions({ queryKey: ["lobby"], queryFn: () => getLobby() });
+export const botQuery = queryOptions({ queryKey: ["lobby", "bot"], queryFn: () => getBotDeals() });
 
 export const Route = createFileRoute("/_authenticated/lobby")({
   head: () => ({
@@ -20,12 +21,14 @@ export const Route = createFileRoute("/_authenticated/lobby")({
       { name: "twitter:card", content: "summary" },
     ],
   }),
-  loader: ({ context }) => context.queryClient.ensureQueryData(lobbyQuery),
+  loader: ({ context }) => Promise.all([context.queryClient.ensureQueryData(lobbyQuery), context.queryClient.ensureQueryData(botQuery)]),
   component: Lobby,
 });
 
 function Lobby() {
   const { data } = useSuspenseQuery(lobbyQuery);
+  const { data: botDeals } = useSuspenseQuery(botQuery);
+  const startBot = useServerFn(startBotGame);
   const navigate = useNavigate();
   const qc = useQueryClient();
   const find = useServerFn(findOpponent);
@@ -34,8 +37,8 @@ function Lobby() {
   const [busy, setBusy] = useState(false);
 
   const todayGame = data.games.find((g) => g.dealId === data.deal.id);
-  const active = data.games.filter((g) => g.status === "active" || g.status === "waiting");
-  const past = data.games.filter((g) => g.status === "finished");
+  const active = data.games.filter((g) => (g.status === "active" || g.status === "waiting") && !g.vsBot);
+  const past = data.games.filter((g) => g.status === "finished" && !g.vsBot);
 
   async function run(fn: () => Promise<{ gameId: string }>) {
     setBusy(true);
@@ -79,6 +82,32 @@ function Lobby() {
 
       <section className="grid content-start gap-6">
         <GameList title="Your games" games={active} empty="No games in progress." />
+        <div>
+          <h2 className="text-xl font-semibold">Play the computer</h2>
+          <p className="mb-3 text-sm text-muted-foreground">Play any time. You sit North against the computer, and every North player on a deal gets the same tiles, so you're ranked against everyone who played it.</p>
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {botDeals.map((d) => (
+              <li key={d.id}>
+                <button type="button" disabled={busy} onClick={() => run(() => startBot({ data: { dealId: d.id } }))}
+                  className="flex w-full items-center justify-between rounded-lg border border-border bg-secondary px-4 py-3 text-left transition-colors hover:bg-accent">
+                  <div>
+                    <p className="font-medium">Bot deal #{d.number}</p>
+                    <p className="text-xs text-muted-foreground">{d.players} played{d.best !== null ? ` · best ${d.best}` : ""}</p>
+                  </div>
+                  <div className="text-right text-sm">
+                    {!d.mine ? <span className="font-semibold text-primary">Play</span>
+                      : d.mine.status === "finished" ? (
+                        <>
+                          <p className="font-display text-lg">{d.mine.score} – {d.mine.botScore}</p>
+                          <p className="text-xs">{d.mine.mp !== null ? `${d.mine.mp}% matchpoints` : "First to finish"}</p>
+                        </>
+                      ) : <span className="font-semibold text-primary">Continue · {d.mine.score} – {d.mine.botScore}</span>}
+                  </div>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
         <GameList title="Finished" games={past} empty="Finished games and their results show up here." />
       </section>
     </div>

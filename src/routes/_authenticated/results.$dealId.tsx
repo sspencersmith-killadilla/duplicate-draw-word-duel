@@ -35,8 +35,8 @@ function Results() {
     <div className="grid gap-6">
       <div>
         <p className="text-xs uppercase tracking-[0.2em] text-primary">Deal results</p>
-        <h1 className="text-4xl font-semibold">{data.deal.date}</h1>
-        {data.deal.open && <p className="mt-1 text-sm text-muted-foreground">The deal is still open, so these numbers will move as more games finish.</p>}
+        <h1 className="text-4xl font-semibold">{data.deal.botNumber ? `Bot deal #${data.deal.botNumber}` : data.deal.date}</h1>
+        {data.deal.botNumber ? <p className="mt-1 text-sm text-muted-foreground">Everyone here played North against the same computer, so you are ranked against the other North players. New players keep joining.</p> : data.deal.open && <p className="mt-1 text-sm text-muted-foreground">The deal is still open, so these numbers will move as more games finish.</p>}
       </div>
       {mine && (
         <div className="paper flex flex-wrap items-center gap-8 rounded-xl p-6">
@@ -47,7 +47,7 @@ function Results() {
         </div>
       )}
       <div className="grid gap-6 md:grid-cols-2">
-        {(["north", "south"] as const).map((seat) => (
+        {(data.deal.botNumber ? (["north"] as const) : (["north", "south"] as const)).map((seat) => (
           <div key={seat} className="rounded-xl border border-border bg-secondary p-4">
             <h2 className="text-xl font-semibold capitalize">{seat} seat</h2>
             <table className="mt-3 w-full text-sm">

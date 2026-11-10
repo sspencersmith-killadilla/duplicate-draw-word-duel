@@ -233,3 +233,66 @@ export function matchpointPercent(myScore: number, fieldScores: number[]): numbe
 
 export const PASS_LIMIT = 6; // 3 consecutive passes from each player
 export const DEAL_OPEN_HOURS = 72;
+
+export const BOT_ID = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * The bot: finds the highest-scoring legal play for a rack. Deterministic (ties broken by search order),
+ * so every player on a bot deal faces the same strategy.
+ */
+export function bestMove(
+  board: Board,
+  rack: string,
+  isWord: (w: string) => boolean,
+  isPrefix: (p: string) => boolean,
+): { placements: Placement[]; score: number; words: string[] } | null {
+  let best: { placements: Placement[]; score: number; words: string[] } | null = null;
+  const empty = boardIsEmpty(board);
+  for (const horizontal of [true, false]) {
+    const at = (line: number, i: number) => (horizontal ? board[line]![i]! : board[i]![line]!);
+    const pos = (line: number, i: number) => (horizontal ? { r: line, c: i } : { r: i, c: line });
+    const crossOk = (line: number, i: number, letter: string) => {
+      const { r, c } = pos(line, i);
+      const [dr, dc] = horizontal ? [1, 0] : [0, 1];
+      let rr = r - dr, cc = c - dc, before = "";
+      while (rr >= 0 && cc >= 0 && board[rr]![cc]) { before = board[rr]![cc]! + before; rr -= dr; cc -= dc; }
+      rr = r + dr; cc = c + dc; let after = "";
+      while (rr < SIZE && cc < SIZE && board[rr]![cc]) { after += board[rr]![cc]!; rr += dr; cc += dc; }
+      return (!before && !after) || isWord(before + letter + after);
+    };
+    for (let line = 0; line < SIZE; line++) {
+      if (empty && line !== CENTER) continue;
+      for (let start = 0; start < SIZE; start++) {
+        if (start > 0 && at(line, start - 1)) continue;
+        const extend = (i: number, word: string, placed: Placement[], pool: string[]) => {
+          if (placed.length && (i >= SIZE || !at(line, i)) && word.length >= 2 && isWord(word)) {
+            const res = evaluatePlay(board, rack, placed, isWord);
+            if (res.ok && (!best || res.score > best.score)) best = { placements: [...placed], score: res.score, words: res.words };
+          }
+          if (i >= SIZE) return;
+          const existing = at(line, i);
+          if (existing) {
+            const w = word + existing;
+            if (isPrefix(w)) extend(i + 1, w, placed, pool);
+            return;
+          }
+          if (pool.length === 0) return;
+          const tried = new Set<string>();
+          for (let k = 0; k < pool.length; k++) {
+            const l = pool[k]!;
+            if (tried.has(l)) continue;
+            tried.add(l);
+            const w = word + l;
+            if (!isPrefix(w) || !crossOk(line, i, l)) continue;
+            const rest = pool.slice(0, k).concat(pool.slice(k + 1));
+            placed.push({ ...pos(line, i), letter: l });
+            extend(i + 1, w, placed, rest);
+            placed.pop();
+          }
+        };
+        extend(start, "", [], [...rack]);
+      }
+    }
+  }
+  return best;
+}

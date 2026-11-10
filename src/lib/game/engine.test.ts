@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { dealSeats, emptyBoard, evaluatePlay, matchpointPercent, refill, fullBag, applyPlacements } from "./engine";
+import { bestMove, dealSeats, emptyBoard, evaluatePlay, matchpointPercent, refill, fullBag, applyPlacements } from "./engine";
 
-const dict = new Set(["CAT", "CATS", "AT", "TA", "AS"]);
+const dict = new Set(["CAT", "CATS", "AT", "TA", "AS", "ACT", "SCAT"]);
 const isWord = (w: string) => dict.has(w);
 
 describe("duplicate deal", () => {
@@ -48,5 +48,18 @@ describe("scoring", () => {
 describe("matchpoints", () => {
   it("gives 1 per score beaten and ½ per tie", () => {
     expect(matchpointPercent(300, [200, 300, 400, 100])).toBe(62.5);
+  });
+});
+
+describe("bot", () => {
+  const words = ["CAT", "CATS", "AT", "TA", "AS", "ACT", "SCAT"];
+  const isPrefix = (p: string) => words.some((w) => w.startsWith(p));
+  it("finds the highest-scoring opening play through the center", () => {
+    const m = bestMove(emptyBoard(), "SCATQQQ", isWord, isPrefix);
+    expect(m?.words).toEqual(["SCAT"]);
+    expect(m?.placements.some((p) => p.r === 7 && p.c === 7)).toBe(true);
+  });
+  it("passes when no word is possible", () => {
+    expect(bestMove(emptyBoard(), "QQQ", isWord, isPrefix)).toBeNull();
   });
 });
