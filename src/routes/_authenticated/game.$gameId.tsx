@@ -101,8 +101,8 @@ function GamePage() {
     const targetAt = (x: number, y: number) => {
       const el = document.elementFromPoint(x, y) as HTMLElement | null;
       return {
-        cell: el?.closest<HTMLElement>("[data-cell]")?.dataset.cell ?? null,
-        rack: el?.closest<HTMLElement>("[data-rack-id]")?.dataset.rackId ?? null,
+        cell: el?.closest<HTMLElement>("[data-cell]")?.dataset["cell"] ?? null,
+        rack: el?.closest<HTMLElement>("[data-rack-id]")?.dataset["rackId"] ?? null,
         inRack: !!el?.closest("[data-rack]"),
       };
     };
