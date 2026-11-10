@@ -13,5 +13,6 @@ export function useSession() {
     const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => data.subscription.unsubscribe();
   }, []);
-  return { session, ready };
+  const isGuest = !!session?.user?.is_anonymous;
+  return { session, ready, isGuest };
 }

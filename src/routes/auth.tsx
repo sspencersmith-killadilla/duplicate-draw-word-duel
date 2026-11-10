@@ -5,6 +5,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import "@lovable.dev/cloud-auth-js/styles.css";
 import { Button } from "@/components/ui/button";
+import { useServerFn } from "@tanstack/react-start";
+import { updateUsername } from "@/lib/game/game.functions";
+import { GuestPlayButton } from "@/components/GuestPlayButton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
@@ -37,10 +40,15 @@ function AuthPage() {
   const [username, setUsername] = useState("");
   const [busy, setBusy] = useState(false);
   const [sent, setSent] = useState(false);
+  const [guest, setGuest] = useState(false);
+  const saveName = useServerFn(updateUsername);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => { if (data.session) navigate({ to: "/lobby" }); });
-    const { data } = supabase.auth.onAuthStateChange((e, s) => { if (s && e === "SIGNED_IN") navigate({ to: "/lobby" }); });
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session?.user.is_anonymous) { setGuest(true); setMode("signup"); }
+      else if (data.session) navigate({ to: "/lobby" });
+    });
+    const { data } = supabase.auth.onAuthStateChange((e, s) => { if (s && e === "SIGNED_IN" && !s.user.is_anonymous) navigate({ to: "/lobby" }); });
     return () => data.subscription.unsubscribe();
   }, [navigate]);
 
@@ -48,7 +56,14 @@ function AuthPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      if (mode === "signup") {
+      if (mode === "signup" && guest) {
+        // Turn the guest into a real account in place, so their games and results carry over.
+        if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) throw new Error("Username: 3–20 letters, numbers or underscores.");
+        await saveName({ data: { username } });
+        const { error } = await supabase.auth.updateUser({ email, password }, { emailRedirectTo: window.location.origin + "/lobby" });
+        if (error) throw error;
+        setSent(true);
+      } else if (mode === "signup") {
         if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) throw new Error("Username: 3–20 letters, numbers or underscores.");
         const { error } = await supabase.auth.signUp({
           email, password, options: { emailRedirectTo: window.location.origin, data: { username: username.toLowerCase() } },
@@ -74,12 +89,16 @@ function AuthPage() {
   return (
     <div className="mx-auto max-w-md py-10">
       <div className="paper rounded-xl p-8">
-        <h1 className="text-3xl font-semibold">{mode === "signin" ? "Take your seat" : "Join the club"}</h1>
-        <p className="mt-1 text-sm opacity-70">{mode === "signin" ? "Sign in to play today's deal." : "Pick a username other players will see."}</p>
+        <h1 className="text-3xl font-semibold">{guest && mode === "signup" ? "Save your games" : mode === "signin" ? "Take your seat" : "Join the club"}</h1>
+        <p className="mt-1 text-sm opacity-70">{guest && mode === "signup" ? "Create an account and keep every game you played as a guest." : mode === "signin" ? "Sign in to play today's deal." : "Pick a username other players will see."}</p>
         {sent ? (
-          <p className="mt-6 rounded-md bg-tile-new/40 p-4 text-sm">Check your email to confirm your account, then come back to sign in.</p>
+          <p className="mt-6 rounded-md bg-tile-new/40 p-4 text-sm">{guest ? "Check your email and click the link to finish. Your guest games are already saved to this account — keep playing in the meantime." : "Check your email to confirm your account, then come back to sign in."}</p>
         ) : (
           <>
+            {guest && mode === "signin" && (
+              <p className="mt-4 rounded-md bg-tile-new/40 p-3 text-xs">Signing in to an existing account leaves your guest games behind. To keep them, create a new account instead.</p>
+            )}
+            {!(guest && mode === "signup") && (<>
             <div className="mt-6 grid gap-2">
               <button type="button" onClick={() => oauth("google")}
                 className="flex h-10 items-center justify-center gap-[10px] rounded-md border border-[#747775] bg-[#FFFFFF] px-3 text-sm font-medium text-[#1F1F1F]">
@@ -87,6 +106,7 @@ function AuthPage() {
               </button>
             </div>
             <div className="my-5 flex items-center gap-3 text-xs opacity-60"><span className="h-px flex-1 bg-current" />or<span className="h-px flex-1 bg-current" /></div>
+            </>)}
             <form onSubmit={submit} className="grid gap-4">
               {mode === "signup" && (
                 <div className="grid gap-1.5">
@@ -107,8 +127,9 @@ function AuthPage() {
           </>
         )}
         <button className="mt-5 text-sm underline opacity-80" onClick={() => { setMode(mode === "signin" ? "signup" : "signin"); setSent(false); }}>
-          {mode === "signin" ? "New here? Create an account" : "Already have an account? Sign in"}
+          {mode === "signin" ? (guest ? "Create an account and keep my guest games" : "New here? Create an account") : "Already have an account? Sign in"}
         </button>
+        {!guest && <div className="mt-4 border-t border-card-foreground/15 pt-4"><GuestPlayButton label="Just play as a guest" size="sm" /></div>}
       </div>
     </div>
   );

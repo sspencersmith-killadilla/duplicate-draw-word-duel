@@ -1,3 +1,4 @@
+import { GuestPlayButton } from "@/components/GuestPlayButton";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 
@@ -32,9 +33,10 @@ function Index() {
           <p className="mt-5 max-w-lg text-lg text-muted-foreground">
             Like duplicate bridge, every table plays the same deal. You face one opponent, but you're really measured against everyone who drew your tiles.
           </p>
-          <div className="mt-8 flex gap-3">
+          <div className="mt-8 flex flex-wrap gap-3">
             <Button variant="brass" size="lg" asChild><Link to="/lobby">Play today's deal</Link></Button>
-            <Button variant="felt" size="lg" asChild><Link to="/leaderboard">See rankings</Link></Button>
+            <GuestPlayButton label="Play as guest" />
+            <Button variant="ghost" size="lg" asChild><Link to="/leaderboard">See rankings</Link></Button>
           </div>
         </div>
         <div className="flex flex-wrap justify-center gap-2" aria-hidden="true">

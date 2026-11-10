@@ -1,3 +1,4 @@
+import { SaveGuestBanner } from "@/components/SaveGuestBanner";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { queryOptions, useSuspenseQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -122,6 +123,7 @@ function GamePage() {
             <Button variant="brass" size="sm" asChild><Link to="/results/$dealId" params={{ dealId: game.dealId }}>Compare with the field</Link></Button>
           )}
         </div>
+        {game.status === "finished" && <SaveGuestBanner text="Nice game! Create an account to keep this result and your place in the rankings." />}
         <div className="mx-auto w-full max-w-[680px]">
           <BoardGrid board={game.board} pending={pendingLetters} onCellClick={onCellClick} />
         </div>

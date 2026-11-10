@@ -14,7 +14,7 @@ export function Logo() {
 }
 
 export function SiteHeader() {
-  const { session, ready } = useSession();
+  const { session, ready, isGuest } = useSession();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -38,7 +38,11 @@ export function SiteHeader() {
                 <Link to="/lobby" className={link} activeProps={active}>Lobby</Link>
                 <Link to="/leaderboard" className={link} activeProps={active}>Rankings</Link>
                 <Link to="/profile" className={link} activeProps={active}>Profile</Link>
-                <Button variant="felt" size="sm" onClick={signOut}>Sign out</Button>
+                {isGuest ? (
+                  <Button variant="brass" size="sm" asChild><Link to="/auth">Save account</Link></Button>
+                ) : (
+                  <Button variant="felt" size="sm" onClick={signOut}>Sign out</Button>
+                )}
               </>
             ) : (
               <Button variant="brass" size="sm" asChild>
